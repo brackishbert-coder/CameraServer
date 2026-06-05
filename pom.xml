@@ -3,4 +3,29 @@
   <groupId>The</groupId>
   <artifactId>CameraServer</artifactId>
   <version>0.0.1-SNAPSHOT</version>
+
+  <dependencies>
+    <!-- Local OpenCV install: the same jar the Eclipse .classpath references.
+         The native library is loaded at runtime via System.load(...) in WebcamServer. -->
+    <dependency>
+      <groupId>org.opencv</groupId>
+      <artifactId>opencv</artifactId>
+      <version>3.4.13</version>
+      <scope>system</scope>
+      <systemPath>/home/wes/TIMEVIBE/opencv-3.4.13/build/bin/opencv-3413.jar</systemPath>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>17</release>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>
