@@ -4,15 +4,20 @@
   <artifactId>CameraServer</artifactId>
   <version>0.0.1-SNAPSHOT</version>
 
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
   <dependencies>
-    <!-- Local OpenCV install: the same jar the Eclipse .classpath references.
-         The native library is loaded at runtime via System.load(...) in WebcamServer. -->
+    <!-- Bundled, cross-platform OpenCV via JavaCV (bytedeco): ships its own native
+         libraries for Windows/macOS/Linux, so there is NO machine-specific OpenCV
+         install and NO System.load of an absolute path. Same version trainingGround
+         already uses, keeping one native stack across the release. -->
     <dependency>
-      <groupId>org.opencv</groupId>
-      <artifactId>opencv</artifactId>
-      <version>3.4.13</version>
-      <scope>system</scope>
-      <systemPath>/home/wes/TIMEVIBE/opencv-3.4.13/build/bin/opencv-3413.jar</systemPath>
+      <groupId>org.bytedeco</groupId>
+      <artifactId>javacv-platform</artifactId>
+      <version>1.5.10</version>
     </dependency>
   </dependencies>
 
@@ -23,8 +28,38 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.13.0</version>
         <configuration>
-          <release>17</release>
+          <release>21</release>
         </configuration>
+      </plugin>
+      <!-- Runnable fat jar (all natives bundled) -> the artifact jpackage wraps. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <transformers>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>cam.WebcamServer</mainClass>
+                </transformer>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

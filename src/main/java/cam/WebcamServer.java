@@ -1,9 +1,8 @@
 package cam;
 
-import org.opencv.core.Mat;
-import org.opencv.core.MatOfByte;
-import org.opencv.imgcodecs.Imgcodecs;
-import org.opencv.videoio.VideoCapture;
+import org.bytedeco.javacv.Frame;
+import org.bytedeco.javacv.Java2DFrameConverter;
+import org.bytedeco.javacv.OpenCVFrameGrabber;
 
 import javax.imageio.ImageIO;
 import javax.swing.ImageIcon;
@@ -22,9 +21,11 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class WebcamServer {
 
-    static {
-        System.load("/home/wes/TIMEVIBE/opencv-3.4.13/build/lib/libopencv_java3413.so");
-    }
+    // JavaCV grabber replaces OpenCV's VideoCapture -- no absolute-path System.load,
+    // native libs are bundled cross-platform by javacv-platform. One shared grabber
+    // (index 0 = default webcam); grabFrameJpeg() is synchronized so concurrent viewer
+    // threads can't corrupt the single grabber/converter.
+    private static final Java2DFrameConverter CONVERTER = new Java2DFrameConverter();
 
     private static final int STREAM_PORT = 5000; // to viewers
     private static final int BOARD_PORT = 5050;  // from board sender
@@ -32,13 +33,14 @@ public class WebcamServer {
     private static final List<Socket> clients = Collections.synchronizedList(new ArrayList<>());
     static JFrame frame1 = new JFrame("Bang Stream Viewer");
     static JLabel imageLabel = new JLabel();
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
 		frame1.getContentPane().add(imageLabel, BorderLayout.CENTER);
 	    frame1.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 	    frame1.setSize(640, 480);
 	    frame1.setVisible(true);
         System.out.println("WebcamServer started.");
-        VideoCapture camera = new VideoCapture(0);
+        OpenCVFrameGrabber camera = new OpenCVFrameGrabber(0);
+        camera.start();
 
         // Thread to stream webcam/board frames
         new Thread(() -> streamLoop(camera)).start();
@@ -47,8 +49,25 @@ public class WebcamServer {
         new Thread(WebcamServer::receiveBoardFrames).start();
     }
 
+    /** Grab one webcam frame and JPEG-encode it. Synchronized: the grabber and the
+     *  reused converter BufferedImage are not thread-safe, and JPEG encoding must
+     *  finish before the next grab overwrites the frame. Returns null on failure. */
+    private static synchronized byte[] grabFrameJpeg(OpenCVFrameGrabber camera) {
+        try {
+            Frame f = camera.grab();
+            if (f == null) return null;
+            BufferedImage img = CONVERTER.convert(f);
+            if (img == null) return null;
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            if (!ImageIO.write(img, "jpg", baos)) return null;
+            return baos.toByteArray();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** Accept viewers (WebcamUpdater) and stream frames */
-    private static void streamLoop(VideoCapture camera) {
+    private static void streamLoop(OpenCVFrameGrabber camera) {
         try (ServerSocket serverSocket = new ServerSocket(STREAM_PORT)) {
             System.out.println("Streaming server running on port " + STREAM_PORT);
 
@@ -64,15 +83,14 @@ public class WebcamServer {
         }
     }
 
-    private static void handleClient(VideoCapture camera, Socket client) {
+    private static void handleClient(OpenCVFrameGrabber camera, Socket client) {
         try (DataOutputStream dos = new DataOutputStream(client.getOutputStream())) {
-            Mat frame = new Mat();
             while (true) {
                 byte[] jpegBytes;
                 BufferedImage board = boardFrame.getAndSet(null);
 
                 if (board != null) {
-                	
+
                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
                     ImageIO.write(board, "jpg", baos);
                     jpegBytes = baos.toByteArray();
@@ -80,11 +98,9 @@ public class WebcamServer {
                     imageLabel.setIcon(new ImageIcon(board));
                     frame1.pack();
                 } else {
-                	
-                    if (!camera.isOpened() || !camera.read(frame)) continue;
-                    MatOfByte mob = new MatOfByte();
-                    if (!Imgcodecs.imencode(".jpg", frame, mob)) continue;
-                    jpegBytes = mob.toArray();
+
+                    jpegBytes = grabFrameJpeg(camera);
+                    if (jpegBytes == null) continue;
                     imageLabel.setIcon(new ImageIcon(ImageIO.read(new ByteArrayInputStream(jpegBytes))));
                     frame1.pack();
                 }
